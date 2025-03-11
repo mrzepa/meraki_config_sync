@@ -13,7 +13,10 @@ This project provides a series of tools for managing and synchronizing VLAN and 
 5. Includes backup functionality to save current configurations before applying changes.
 
 ---
+## Requirements
+- Python 3.12+
 
+---
 ## Setup Instructions
 
 Follow the steps below to configure and run the tool:
@@ -21,8 +24,8 @@ Follow the steps below to configure and run the tool:
 ### 1. Clone the Project
 Clone the project repository to your local machine:
 ```bash
-git clone <repository_url>
-cd <repository_directory>
+git clone https://github.com/mrzepa/meraki_config_sync.git
+cd meraki_config_sync
 ```
 
 ### 2. Install Required Dependencies
