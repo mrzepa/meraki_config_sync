@@ -147,23 +147,26 @@ Here is an example of the `vlans.json` structure:
 {
   "Guest": {
     "ID": 2,
-    "VPN Mode": "Disabled"
+    "VPN Mode": "Disabled",
+    "DHCP Server": true
   },
   "Management": {
     "ID": 3,
-    "VPN Mode": "Enabled"
+    "VPN Mode": "Enabled",
+    "DHCP Server": false
   },
   "VOICE": {
     "ID": 4,
-    "VPN Mode": "Enabled"
+    "VPN Mode": "Enabled",
+    "DHCP Server": true
   }
 }
 ```
-
 ### Explanation of the Fields
 - **Key (VLAN Name):** A string representing the VLAN name (e.g., `"Guest"`, `"Management"`).
 - **ID:** A unique integer representing the VLAN ID (e.g., 2, 3).
 - **VPN Mode:** A string field to specify whether the VPN mode for the VLAN is `"Enabled"` or `"Disabled"`.
+- **DHCP Server:** Bool value indicating if a DHCP server should be enabled on this VLAN.
 
 ### Steps to Create `vlans.json`
 1. Navigate to the `input` directory in your project folder.
@@ -176,6 +179,35 @@ Here is an example of the `vlans.json` structure:
 - Only specify the VLANs you'll be managing in the Meraki networks.
 
 By providing the `vlans.json` file, the tool can efficiently compare and synchronize VLANs across networks.
+## Individual Site Settings
+
+To update settings that are local to one site only, create a directory under `input` called `sites`. Under `sites`, create another directory using the Meraki `network_name` for the specific site. 
+
+The structure should look like the following:
+```Text
+input/
+└── sites/
+    └── <meraki_network_name>/
+        ├── mx_ports.csv             # Port settings for MX devices
+        ├── subnets.csv              # Local VLAN configurations
+        └── <VLAN name>/             # VLAN-specific DHCP configurations
+            ├── dhcp.json            # DHCP server settings in JSON format (DNS, DHCP options, etc.)
+            ├── reserved.csv         # Reserved IP address entries (same format as Meraki Dashboard files)
+            └── fixed.csv            # Fixed IP address entries (same format as Meraki Dashboard files)
+```
+### File Details:
+
+| File / Directory          | Description                                                                                                              |
+|---------------------------|--------------------------------------------------------------------------------------------------------------------------|
+| `mx_ports.csv`            | Contains port-specific settings for MX appliances. Follow the PORTS CSV example above, but omit the `site_name`.         |
+| `subnets.csv`             | Contains information for adding local VLANs. Follow the VLANs CSV example above, but omit the `site_name`.           |
+| `<VLAN_name>/dhcp.json`   | Contains DHCP server settings (like DNS servers, DHCP options, etc.) for a VLAN in JSON format.                          |
+| `<VLAN_name>/reserved.csv`| Contains reserved DHCP IP address entries. Use the same format as you do when uploading entries via the Meraki Dashboard. |
+| `<VLAN_name>/fixed.csv`   | Contains fixed DHCP IP address entries. Use the same format as you do when uploading fixed IPs via the Meraki Dashboard. |
+
+Ensure that you strictly follow this naming and structure convention. This approach enables clear organization, easy maintenance, and smooth automation of site-specific configurations.
+
+
 
 ## How to Use
 
@@ -208,7 +240,7 @@ python meraki_site_update.py --site-name "My Site Name" --ports ports.csv
 ### Add or Update VLANs for Multiple Sites
 You can use a file containing a list of site names to apply changes to multiple networks:
 ```bash
-python meraki_site_update.py --site-names-file sites.txt --vlans vlans.csv -a
+python meraki_site_update.py --site-names-file sites.txt --vlans vlans.csv -a -u -m
 ```
 
 ---

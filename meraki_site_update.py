@@ -103,7 +103,8 @@ def build_combined_data(site_dict: dict, standard_vlans: dict) -> dict:
             combined_data[site_name][vlan_name] = {
                 "Prefix": subnet.strip(),  # Include the subnet (strip leading/trailing whitespace)
                 "ID": vlan_details.get("ID", None),  # Get the ID or None if not present
-                "VPN Mode": vlan_details.get("VPN Mode", None)  # Get VPN Mode or None if not present
+                "VPN Mode": vlan_details.get("VPN Mode", None),  # Get VPN Mode or None if not present
+                "DHCP Server": vlan_details.get("DHCP Server", True)  # DCHP Server for this vlan?
             }
 
     return combined_data
@@ -126,6 +127,72 @@ def meraki_vlans(site_data: dict, network_name: str, network_id: str, add_missin
     :return: None. Performs VLAN additions and/or updates on the network and logs progress.
     :rtype: None
     """
+
+    def add_dhcp_server(network_id, vlan_name, vlan_id, network_name):
+        meraki_api_payload = {}
+        file_path = os.path.join(config.INPUT_DIR, 'sites', network_name, vlan_name)
+        dhcp_setting_filename = 'dhcp.json'
+        fixed_filename = 'fixed.csv'
+        reserved_filename = 'reserved.csv'
+        dhcp_setting_path = os.path.join(file_path, dhcp_setting_filename)
+        fixed_path = os.path.join(file_path, fixed_filename)
+        reserved_path = os.path.join(file_path, reserved_filename)
+
+        # Check if dhcp.json exists (required file)
+        if os.path.exists(dhcp_setting_path):
+            try:
+                with open(dhcp_setting_path, 'r') as dhcp_file:
+                    dhcp_settings = json.load(dhcp_file)
+                meraki_api_payload.update(dhcp_settings)
+                logger.info(f"Loaded DHCP settings from {dhcp_setting_path}")
+            except json.JSONDecodeError as e:
+                logger.error(f"Invalid JSON in DHCP settings file {dhcp_setting_path}: {e}")
+
+            # Check optional fixed.csv file
+            if os.path.exists(fixed_path):
+                try:
+                    with open(fixed_path, 'r') as fixed_file:
+                        fixed_reader = csv.DictReader(fixed_file)
+                        fixed_assignments = {}
+                        for row in fixed_reader:
+                            mac_address = row['MAC address'].strip()
+                            fixed_assignments[mac_address] = {
+                                'ip': row['LAN IP'].strip(),
+                                'name': row['Client name'].strip()
+                            }
+
+                    meraki_api_payload["fixedIpAssignments"] = fixed_assignments
+                    logger.info(f"Loaded fixed IP assignments from {fixed_path}")
+                except Exception as e:
+                    logger.exception(f"Error reading fixed IP file {fixed_path}: {e}")
+            else:
+                logger.info(f"{fixed_path} not found. Skipping fixed IP assignments.")
+
+            # Check optional reserved.csv file
+            if os.path.exists(reserved_path):
+                try:
+                    with open(reserved_path, 'r') as reserved_file:
+                        reserved_reader = csv.DictReader(reserved_file)
+                        reserved_ranges = []  # Initialize an empty list
+                        for row in reserved_reader:
+                            reserved_ranges.append({
+                                'start': row['First IP'].strip(),
+                                'end': row['Last IP'].strip(),
+                                'comment': row['Comment'].strip()
+                            })
+
+                    meraki_api_payload["reservedIpRanges"] = reserved_ranges
+                    logger.info(f"Loaded reserved IP ranges from {reserved_path}")
+                except Exception as e:
+                    logger.error(f"Error reading reserved IP file {reserved_path}: {e}")
+            else:
+                logger.info(f"{reserved_path} not found. Skipping reserved IP ranges.")
+
+            dashboard.appliance.updateNetworkApplianceVlan(networkId=network_id, vlanId=vlan_id,
+                                                           **meraki_api_payload)
+            logger.info(f"Successfully added DHCP settings to VLAN {vlan_name} in site {network_name}")
+        else:
+            logger.warning(f"{dhcp_setting_path} not found. Skipped adding DHCP settings.")
 
     # Validate input: At least one of add_missing or update_existing must be True
     if not add_missing and not update_existing:
@@ -180,6 +247,7 @@ def meraki_vlans(site_data: dict, network_name: str, network_id: str, add_missin
                 "vpnMode": vlan_details["VPN Mode"],
                 "ipv6": {'enabled': True}
             }
+
             try:
                 # Create the VLAN in Meraki
                 dashboard.appliance.createNetworkApplianceVlan(networkId=network_id, **meraki_api_payload)
@@ -188,6 +256,10 @@ def meraki_vlans(site_data: dict, network_name: str, network_id: str, add_missin
             except Exception as e:
                 # Log failure
                 logger.error(f"Failed to add VLAN {vlan_name} to network {network_name}: {e}")
+
+            if vlan_details["DHCP Server"]:
+                add_dhcp_server(network_id, vlan_name, vlan_details["ID"], network_name)
+
 
     # Handle Existing VLANs (Update them)
     if update_existing and vlans_to_update:
@@ -221,6 +293,8 @@ def meraki_vlans(site_data: dict, network_name: str, network_id: str, add_missin
                 # Log failure
                 logger.error(f"Failed to update VLAN {vlan_name} in network {network_name}: {e}")
 
+            if vlan_details["DHCP Server"]:
+                add_dhcp_server(network_id, vlan_name, vlan_details["ID"], network_name)
 def update_meraki_ports(data_list: dict, network_name: str, network_id: str, standard_vlans: dict):
     """
     Updates Meraki ports based on the provided data list, only for the given network name and ID.
@@ -344,9 +418,9 @@ if __name__ == "__main__":
         help='File containing a list of site names to apply changes to.'
     )
     parser.add_argument(
-        "--test",
+        "-m", "--multi-site",
         action="store_true",
-        help="Test mode."
+        help="Apply changes to multiple sites at once."
     )
 
     # Parse the arguments
@@ -362,7 +436,7 @@ if __name__ == "__main__":
         MERAKI_API_KEY: str = os.getenv('MERAKI_API_KEY')
         MERAKI_ORG_ID: str = os.getenv('MERAKI_ORG_ID')
     except KeyError as e:
-        logger.exception(f'Missing Meraki api_key and org_id environment variables. {e}')
+        logger.critical(f'Missing Meraki api_key and org_id environment variables. {e}')
         raise SystemExit(1)
 
     # Initialize the Meraki dashboard API
@@ -370,7 +444,7 @@ if __name__ == "__main__":
     if dashboard:
         logger.info('Connected to Meraki dashboard')
     else:
-        logger.error('No Meraki dashboard found')
+        logger.critical('No Meraki dashboard found')
         raise SystemExit(1)
 
     # Get the list of standard vlans
@@ -394,12 +468,6 @@ if __name__ == "__main__":
         logger.error('Missing site name. Please use --site-name [site_name] or --site-names-file [filename.txt].')
         raise SystemExit(1)
 
-    ###############################################################################################
-    if args.test:
-        for meraki_network_name in meraki_network_names:
-            meraki_network_id = get_meraki_network_id(meraki_network_name, meraki_networks)
-
-    ###############################################################################################
     if args.vlans:
         if not args.vlans:
             logger.error('Missing vlans file. Please use --vlans filename.csv')
@@ -409,18 +477,32 @@ if __name__ == "__main__":
             logger.error('Missing --a or --u flag. Please use --a or --u flag.')
             raise SystemExit(1)
 
-        site_prefixes_filename = args.vlans
-        site_prefixes_path = os.path.join(config.INPUT_DIR, site_prefixes_filename)
-        with open(site_prefixes_path, 'r') as f:
-            csv_reader = csv.DictReader(f)
-            # Use the first column (site_name) as the key, excluding it from the sub-dictionary
-            site_dict = {
-                row[csv_reader.fieldnames[0]]: {key: value for key, value in row.items() if key != csv_reader.fieldnames[0]}
-                for row in csv_reader
-            }
+        if args.multi_site:
+            # Multi-site updates can't deal with dhcp settings. This will just add the prefixes
+            filename = args.vlans
+            site_prefixes_path = os.path.join(config.INPUT_DIR, filename)
+            with open(site_prefixes_path, 'r') as f:
+                csv_reader = csv.DictReader(f)
+                # Use the first column (site_name) as the key, excluding it from the sub-dictionary
+                site_dict = {
+                    row[csv_reader.fieldnames[0]]: {key: value for key, value in row.items() if key != csv_reader.fieldnames[0]}
+                    for row in csv_reader
+                }
+        else:
+            filename = 'subnets.csv'
+            file_path = os.path.join(config.INPUT_DIR, 'sites', meraki_network_names[0], filename)
+
+            with open(file_path, 'r') as f:
+                csv_reader = csv.DictReader(f)
+                try:
+                    row = next(csv_reader)  # Get only the first row of data
+                except StopIteration:
+                    raise ValueError("CSV file is empty or has no data rows after header.")
+
+                # Build dictionary using headers as keys and the single row as values
+                site_dict = {meraki_network_names[0]: {key: value for key, value in row.items()}}
 
         site_data = build_combined_data(site_dict, standard_vlans)
-
         for meraki_network_name in meraki_network_names:
             meraki_network_id = get_meraki_network_id(meraki_network_name, meraki_networks)
             meraki_vlans(site_data, meraki_network_name, meraki_network_id, args.a, args.u)
@@ -429,20 +511,28 @@ if __name__ == "__main__":
         vlan_missing_report(meraki_networks, standard_vlans)
 
     if args.ports:
-        if not args.ports:
-            logger.error('Missing ports file. Please use --ports filename.csv')
-            raise SystemExit(1)
-        site_ports_filename = args.ports
-        site_ports_path = os.path.join(config.INPUT_DIR, site_ports_filename)
+        if args.multi_site:
+            filename = args.ports
+            site_path = os.path.join(config.INPUT_DIR, filename)
 
-        data_list = []  # This will store the rows as dictionaries
-        with open(site_ports_path, 'r') as f:
-            csv_reader = csv.DictReader(f)
-            # Use the first column (site_name) as the key, excluding it from the sub-dictionary
-            # Iterate through the rows and append them to the list
-            for row in csv_reader:
-                # `row` is already a dictionary with keys as the CSV headers
-                data_list.append(row)
+            data_list = []  # This will store the rows as dictionaries
+            with open(site_path, 'r') as f:
+                csv_reader = csv.DictReader(f)
+                # Iterate through the rows and append them to the list
+                for row in csv_reader:
+                    # `row` is already a dictionary with keys as the CSV headers
+                    data_list.append(row)
+        else:
+            filename = args.ports
+            file_path = os.path.join(config.INPUT_DIR, 'sites', meraki_network_names[0], filename)
+            data_list = []  # This will store the rows as dictionaries
+            with open(file_path, 'r') as f:
+                csv_reader = csv.DictReader(f)
+                for row in csv_reader:
+                    # `row` is already a dictionary with keys as the CSV headers
+                    # Insert 'site_name' attribute into row before appending
+                    row_with_site = {'site_name': meraki_network_names[0], **row}
+                    data_list.append(row_with_site)
 
         for meraki_network_name in meraki_network_names:
             meraki_network_id = get_meraki_network_id(meraki_network_name, meraki_networks)
