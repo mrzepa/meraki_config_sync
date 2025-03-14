@@ -12,6 +12,8 @@ import config
 import argparse
 
 logger = logging.getLogger(__name__)
+
+env_path = os.path.join(os.path.expanduser("~"), ".env")
 load_dotenv()
 
 def vlan_missing_report(meraki_networks: dict, standard_vlans: dict) -> dict:
