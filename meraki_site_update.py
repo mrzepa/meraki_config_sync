@@ -196,6 +196,41 @@ def meraki_vlans(site_data: dict, network_name: str, network_id: str, add_missin
         else:
             logger.warning(f"{dhcp_setting_path} not found. Skipped adding DHCP settings.")
 
+    def enable_vpn_mode(vlan_details: dict, network_id: int):
+        """
+        Enable or update VPN mode configuration for a VLAN within a specified Meraki network.
+
+        This function retrieves the existing site-to-site VPN settings for a given network, updates the
+        VPN mode of a subnet that matches the VLAN's prefix, and then applies the updated VPN settings
+        to the Meraki network. It ensures that the VPN mode is properly configured for subnets associated
+        with the VLAN provided.
+
+        :param vlan_details: A dictionary containing details of the VLAN, including the prefix and the desired VPN mode.
+        :param network_id: The unique identifier of the Meraki network where the VPN configuration should be modified.
+                           Expected as an integer.
+        :return: None. The function operates with side effects by modifying the Meraki VPN configuration.
+        """
+        existing_meraki_vpn = dashboard.appliance.getNetworkApplianceVpnSiteToSiteVpn(network_id)
+        backup(config.BACKUP_DIR, network_name, f'vpn', existing_meraki_vpn)
+        vlan_interface_network = ipaddress.ip_interface(vlan_details['Prefix']).network
+
+        updated_subnets = []
+        for subnet in existing_meraki_vpn["subnets"]:
+
+            subnet_copy = subnet.copy()  # Create a copy to avoid modifying original data
+            existing_subnet_network = ipaddress.ip_network(subnet_copy["localSubnet"])
+
+            # Compare using ipaddress module to ensure proper matching
+            if vlan_interface_network == existing_subnet_network:
+                subnet_copy["useVpn"] = vlan_details["VPN Mode"]
+            updated_subnets.append(subnet_copy)
+
+        vpn_mode_payload = {'mode': existing_meraki_vpn['mode'],
+                            'hubs': existing_meraki_vpn.get('hubs', []),
+                            'subnets': updated_subnets,
+                            }
+        dashboard.appliance.updateNetworkApplianceVpnSiteToSiteVpn(networkId=network_id, **vpn_mode_payload)
+
     # Validate input: At least one of add_missing or update_existing must be True
     if not add_missing and not update_existing:
         logger.error("At least one of 'add_missing' or 'update_existing' must be True.")
@@ -246,7 +281,6 @@ def meraki_vlans(site_data: dict, network_name: str, network_id: str, add_missin
                 "name": vlan_name,
                 "subnet": vlan_details["Prefix"],
                 "applianceIp": vlan_details["Prefix"].split('/')[0],  # Extract appliance IP from Prefix
-                "vpnMode": vlan_details["VPN Mode"],
                 "ipv6": {'enabled': True}
             }
 
@@ -259,9 +293,11 @@ def meraki_vlans(site_data: dict, network_name: str, network_id: str, add_missin
                 # Log failure
                 logger.error(f"Failed to add VLAN {vlan_name} to network {network_name}: {e}")
 
+            if vlan_details["VPN Mode"]:
+                enable_vpn_mode(vlan_details, network_id)
+
             if vlan_details["DHCP Server"]:
                 add_dhcp_server(network_id, vlan_name, vlan_details["ID"], network_name)
-
 
     # Handle Existing VLANs (Update them)
     if update_existing and vlans_to_update:
@@ -282,7 +318,6 @@ def meraki_vlans(site_data: dict, network_name: str, network_id: str, add_missin
                 "name": vlan_name,
                 "subnet": vlan_details["Prefix"],
                 "applianceIp": vlan_details["Prefix"].split('/')[0],
-                "vpnMode": vlan_details["VPN Mode"],
                 "ipv6": {'enabled': True}
             }
             try:
@@ -295,8 +330,12 @@ def meraki_vlans(site_data: dict, network_name: str, network_id: str, add_missin
                 # Log failure
                 logger.error(f"Failed to update VLAN {vlan_name} in network {network_name}: {e}")
 
+            if vlan_details["VPN Mode"]:
+                enable_vpn_mode(vlan_details, network_id)
+
             if vlan_details["DHCP Server"]:
                 add_dhcp_server(network_id, vlan_name, vlan_details["ID"], network_name)
+
 def update_meraki_ports(data_list: dict, network_name: str, network_id: str, standard_vlans: dict):
     """
     Updates Meraki ports based on the provided data list, only for the given network name and ID.
