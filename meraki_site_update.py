@@ -429,12 +429,12 @@ if __name__ == "__main__":
         help=f"Add/Update VLANs at Meraki Site. Filename containing the vlans and prefixes in csv format located in {config.INPUT_DIR}. Must be used with --a or --u."
     )
     parser.add_argument(
-        "-a", "--add",
+        "-a",
         action="store_true",
         help=f"Add VLANs that are missing at Meraki Site. Must be used with --vlans"
     )
     parser.add_argument(
-        "-u", "--update",
+        "-u",
         action="store_true",
         help=f"Update VLANs at Meraki Site. Must be used with --vlans"
     )
