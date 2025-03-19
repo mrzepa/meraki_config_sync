@@ -1,0 +1,17 @@
+{
+  "Default": {
+    "ID": 1,
+    "VPN Mode": false,
+    "DHCP Server": false
+  },
+  "Guest": {
+    "ID": 2,
+    "VPN Mode": false,
+    "DHCP Server": true
+  },
+  "Management": {
+    "ID": 3,
+    "VPN Mode": true,
+    "DHCP Server": true
+  }
+}

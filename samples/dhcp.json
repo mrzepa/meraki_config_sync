@@ -1,0 +1,13 @@
+{
+  "dhcpBootOptionsEnabled": false,
+  "dhcpHandling": "Run a DHCP server",
+  "dhcpLeaseTime": "1 day",
+  "dhcpOptions": [
+    {
+      "code": "15",
+      "type": "text",
+      "value": "example.com"
+    }
+  ],
+  "dnsNameservers": "8.8.8.8\n1.1.1.1\n"
+}

@@ -426,7 +426,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--vlans",
         type=str,
-        help=f"Add/Update VLANs at Meraki Site. Filename containing the vlans and prefixes in csv format located in {config.INPUT_DIR}. Must be used with --a or --u."
+        help=f"Add/Update VLANs at Meraki Site. Filename containing the vlans and prefixes in csv format located in {config.INPUT_DIR}. Must be used with -a or -u."
     )
     parser.add_argument(
         "-a",
@@ -448,20 +448,18 @@ if __name__ == "__main__":
         type=str,
         help="Update Ports at Meraki Site. Filename containing the ports and security role in csv format."
     )
-    site_name_group.add_argument(
-        "--site-name",
-        nargs=1,
-        help="Name of the site to apply the changes to."
-    )
-    site_name_group.add_argument(
-        "--site-names-file",
-        type=str,
-        help='File containing a list of site names to apply changes to.'
-    )
+
     parser.add_argument(
         "-m", "--multi-site",
         action="store_true",
-        help="Apply changes to multiple sites at once."
+        help="Apply changes to multiple sites."
+    )
+
+    parser.add_argument(
+        "--site-names-file",
+        type=str,
+        default="sites.txt",
+        help=f"Filename containing site names, located in {config.INPUT_DIR}. Default: sites.txt"
     )
 
     # Parse the arguments
@@ -498,16 +496,11 @@ if __name__ == "__main__":
     meraki_networks = fetch_meraki_networks(dashboard, MERAKI_ORG_ID)
 
     # Get the site name(s) to apply changes too
-    if args.site_name:
-        meraki_network_names = args.site_name
-    elif args.site_names_file:
-        meraki_network_name_filename = args.site_names_file
-        meraki_network_name_path = os.path.join(config.INPUT_DIR, meraki_network_name_filename)
-        with open(meraki_network_name_path, 'r') as f:
-            meraki_network_names = [line.strip() for line in f if line.strip()]
-    else:
-        logger.error('Missing site name. Please use --site-name [site_name] or --site-names-file [filename.txt].')
-        raise SystemExit(1)
+
+    meraki_network_name_filename = args.site_names_file
+    meraki_network_name_path = os.path.join(config.INPUT_DIR, meraki_network_name_filename)
+    with open(meraki_network_name_path, 'r') as f:
+        meraki_network_names = [line.strip() for line in f if line.strip()]
 
     if args.vlans:
         if not args.vlans:
@@ -515,7 +508,7 @@ if __name__ == "__main__":
             raise SystemExit(1)
 
         if not args.a and not args.u:
-            logger.error('Missing --a or --u flag. Please use --a or --u flag.')
+            logger.error('Missing -a or -u flag.')
             raise SystemExit(1)
 
         if args.multi_site:
