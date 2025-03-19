@@ -2,11 +2,12 @@ import json
 import argparse
 import logging
 import os
-from utils import setup_logging, get_meraki_network_id
+from utils import setup_logging, get_meraki_network_id, fetch_meraki_networks
 import config
 import sys
 import shutil
 import filecmp
+import meraki
 from dotenv import load_dotenv
 
 env_path = os.path.join(os.path.expanduser("~"), ".env")
@@ -23,7 +24,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--site_name',
+        '--site-name',
         type=str,
         required=True,
         help='Site name'

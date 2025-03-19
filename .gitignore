@@ -6,3 +6,4 @@ config.py
 backup
 cache
 
+/test.py
