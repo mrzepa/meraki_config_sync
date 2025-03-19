@@ -15,6 +15,8 @@ This project provides a series of tools for managing and synchronizing VLAN and 
 ---
 ## Requirements
 - Python 3.12+
+- API Key For Meraki Dashboard
+- Meraki Org ID
 
 ---
 ## Setup Instructions
@@ -40,7 +42,7 @@ pip install -r requirements.txt    # Install dependencies
 The `config.py.SAMPLE` file contains default configuration settings. To use this file:
 1. Copy `config.py.SAMPLE` to `config.py`:
    ```bash
-   cp config.py.SAMPLE config.py
+   cp sample/config.py.SAMPLE config.py
    ```
 2. Make necessary adjustments to the directory paths in `config.py`, if needed. By default, the following directories will be created:
    - **input** (for input files)
@@ -49,7 +51,7 @@ The `config.py.SAMPLE` file contains default configuration settings. To use this
    - **backup** (for storing configuration backups)
 
 ### 4. Set Up `.env` File
-You need to create a `.env` file in the project directory to provide your **Meraki API key** and **organization ID**:
+You need to create a `.env` file in your home directory to provide your **Meraki API key** and **organization ID**:
 ```bash
 touch .env
 ```
@@ -62,102 +64,29 @@ MERAKI_ORG_ID=your_meraki_organization_id_here
 
 Replace `your_meraki_api_key_here` and `your_meraki_organization_id_here` with your actual Meraki API credentials.
 
-### 5. Prepare Input Files
-
-- **VLANs File**: A `CSV` file containing VLAN details to add or update. Place this file in the `input` directory.
-- **Sites File (optional)**: A text file with a list of site names (one per line). Place this file in the `input` directory.
-- **Ports File**: A `CSV` file containing switch port configuration details. Place this file in the `input` directory.
-
-## Creating the Ports CSV File
-
-The ports CSV file specifies the configuration details for ports that will be updated or managed in the Meraki networks. This file should be placed in the `input` directory and follows a specific structure as described below.
-
-### Example Ports CSV File
-Here is an example of the ports CSV file (`ports.csv`):
-```csv
-site_name,number,type,vlan,secure
-site 1,7,access,2,y
-site 1,9,access,3,n
-site 2,10,access,4,n
-site 2,11,trunk,5,y
-
-```
-
-### Explanation of the Columns
-- **site_name**: The name of the site where the port configuration will be applied. This must match exactly with the Meraki network name.
-- **number**: The port number to be updated (e.g., `7`, `9`).
-- **type**: The port type, either `access` or `trunk`.
-  - `access`: Connects a port to a single VLAN.
-  - `trunk`: Allows the port to carry traffic for multiple VLANs.
-- **vlan**: The assigned VLAN ID for an `access` port or native VLAN ID for a `trunk` port (must match a valid VLAN from the `vlans.json` file).
-- **secure**: Specifies whether port security is enabled (`y`) or disabled (`n`).
-
-### Steps to Create the Ports CSV File
-1. Navigate to the `input` directory in your project folder.
-2. Create a new file called `ports.csv`.
-3. Add the configuration details for each port, using the columns shown above. Ensure the data is valid:
-
-### Notes
-- Each row in the CSV file represents one port's configuration.
-- The `number` column must specify the port number as a string or integer.
-- If the `secure` column is set to `y`, the port will use a hybrid-radius (802.1x fallback to MAB) access policy. If set to `n`, it will use an open access policy. It is ignored for trunk port.
 ---
-## Creating the VLANs CSV File
-
-The VLANs CSV file specifies VLAN details, including site-specific network prefixes, that will be added or updated in Meraki networks. This file should be placed in the `input` directory and follows a predefined structure.
-
-### Example VLANs CSV File
-Here is an example of a VLANs CSV file (`vlans.csv`):
-```csv
-site_name,Guest,Management,VOICE
-site 1,192.168.5.1/24,,192.168.10.2/24
-```
-
-### Explanation of the Columns
-- **site_name**: The name of the site where the VLAN configuration will be applied. This must match exactly with the Meraki network name.
-- **List of Vlans**:
-   - These are predefined VLAN categories from the `vlans.json` file. Each column represents the **subnet prefix** for that VLAN at the site.
-   - Example: `192.168.5.1/24` is a subnet prefix for the "Guest" VLAN.
-   - Add as many vlans to the header as you need. This can not exceed the number of vlans defined in the `vlans.json` file.
-
-### Rules for Preparing the VLANs CSV File
-1. A VLAN category (column) should be left blank if it’s not applicable for the site.
-2. Ensure that the VLAN category names exactly match the keys in your `vlans.json` file to avoid mismatches.
-3. Each subnet prefix must follow the format `<network_address>/<prefix_length>` (e.g., `192.168.5.1/24`).
-
-### Steps to Create the VLANs CSV File
-1. Navigate to the `input` directory in your project folder.
-2. Create a file called `vlans.csv`.
-3. For each site, add a row specifying:
-   - The **site_name** (must match a Meraki network).
-   - The subnet prefixes for applicable VLAN categories (leave blank for unconfigured VLANs, or vlans that you do not want to add/update at this site).
-
-### Notes
-- Only include VLAN categories that are relevant for your network configurations.
-- Ensure the correct subnet assignments for each site to prevent IP conflicts.
-
----
-### 6. Creating the `vlans.json` File
+### 5. Creating the `vlans.json` File
 
 The `vlans.json` file defines the standard VLAN configurations for your Meraki networks. This file should be placed in the `input` directory and follows the JSON format as described below.
 
+A sample vlans.json file can be found in the `samples` directory.
 #### Example `vlans.json`
 Here is an example of the `vlans.json` structure:
 ```json
 {
   "Guest": {
     "ID": 2,
-    "VPN Mode": "Disabled",
+    "VPN Mode": false,
     "DHCP Server": true
   },
   "Management": {
     "ID": 3,
-    "VPN Mode": "Enabled",
+    "VPN Mode": true,
     "DHCP Server": false
   },
   "VOICE": {
     "ID": 4,
-    "VPN Mode": "Enabled",
+    "VPN Mode": true,
     "DHCP Server": true
   }
 }
@@ -165,12 +94,12 @@ Here is an example of the `vlans.json` structure:
 ### Explanation of the Fields
 - **Key (VLAN Name):** A string representing the VLAN name (e.g., `"Guest"`, `"Management"`).
 - **ID:** A unique integer representing the VLAN ID (e.g., 2, 3).
-- **VPN Mode:** A string field to specify whether the VPN mode for the VLAN is `"Enabled"` or `"Disabled"`.
+- **VPN Mode:** Bool value to specify whether the VPN mode for the VLAN is `"true"` or `"false"`.
 - **DHCP Server:** Bool value indicating if a DHCP server should be enabled on this VLAN.
 
 ### Steps to Create `vlans.json`
 1. Navigate to the `input` directory in your project folder.
-2. Create a new file called `vlans.json`.
+2. Create a new file called `vlans.json` or copy the one from `samples` directory.
 3. Populate the file with your standard VLAN configurations. Follow the structure shown in the example.
 
 ### Notes
@@ -182,6 +111,12 @@ By providing the `vlans.json` file, the tool can efficiently compare and synchro
 ## Individual Site Settings
 
 To update settings that are local to one site only, create a directory under `input` called `sites`. Under `sites`, create another directory using the Meraki `network_name` for the specific site. 
+
+The script `prep_site.py` can be executed to automatically generate the site specific files and directory structure. It requires that the `vlans.json` file already be properly populated in the `input` directory.
+
+```bash
+python prep_site.py --site-name "my meraki site"
+```
 
 The structure should look like the following:
 ```Text
@@ -207,7 +142,7 @@ input/
 
 Ensure that you strictly follow this naming and structure convention. This approach enables clear organization, easy maintenance, and smooth automation of site-specific configurations.
 
-
+You will need to edit each of these files with the local settings of the site.
 
 ## How to Use
 
@@ -216,78 +151,37 @@ You can run the tool via command-line options. Examples of common use cases are:
 ### Add Missing VLANs
 To add missing VLANs to the specified site:
 ```bash
-python meraki_site_update.py --site-name "My Site Name" --vlans vlans.csv -a
+python meraki_site_update.py  --vlans vlans.csv -a
 ```
 
 ### Update Existing VLANs
 To update existing VLANs based on the provided VLAN file:
 ```bash
-python meraki_site_update.py --site-name "My Site Name" --vlans vlans.csv -u
+python meraki_site_update.py  --vlans vlans.csv -u
 ```
 
+### Update Switch Ports
+To update switch port configurations based on a port file:
+```bash
+python meraki_site_update.py --ports mx_ports.csv
+```
+
+### Add and Update VLANs for Multiple Sites
+You can use a file containing a list of site names to apply changes to multiple networks:
+```bash
+python meraki_site_update.py --site-names-file sites.txt --vlans vlans.csv -aum
+````
+
+### Add and Update VLANs, and ports at the same time.
+```bash
+python meraki_site_update.py  --vlans vlans.csv -au --ports mx_ports.csv
+```
 ### Generate VLAN Report
 To generate a report showing missing or mismatched VLANs for all networks:
 ```bash
 python meraki_site_update.py --vlans-report
 ```
 
-### Update Switch Ports
-To update switch port configurations based on a port file:
-```bash
-python meraki_site_update.py --site-name "My Site Name" --ports ports.csv
-```
-
-### Add or Update VLANs for Multiple Sites
-You can use a file containing a list of site names to apply changes to multiple networks:
-```bash
-python meraki_site_update.py --site-names-file sites.txt --vlans vlans.csv -a -u -m
-```
-
----
-
-## Example Workflow
-
-### 1. Add Missing VLANs
-1. Prepare a VLAN CSV file per the instruction above.
-   
-2. Run the command:
-   ```bash
-   python meraki_site_update.py --site-name "My Site Name" --vlans vlans.csv -a
-   ```
-### 2. Update Existing VLANs
-1. Prepare a VLAN CSV file per the instruction above.
-   
-2. Run the command:
-   ```bash
-   python meraki_site_update.py --site-name "My Site Name" --vlans vlans.csv -u
-   ```
-NOTE: You can use the -a and -u flags at the same time. This will add any missing vlans and update existing ones.
-
-### 3. Update Meraki MX ports
-1. Prepare a PORTS CSV file per the instruction above.
-   
-2. Run the command:
-   ```bash
-   python meraki_site_update.py --site-name "My Site Name" --ports ports.csv
-   ```
-### 4. Generate VLAN Report
-Run the command to check for VLAN mismatches or missing VLANs:
-```bash
-python meraki_site_update.py --vlans-report
-```
-
-This will generate a `vlan_report.json` file in the `output` directory.
-
-### Notes
-
-- You can use the `--ports` and `--vlans` options at the same time. This allows you to update both the VLANs and ports in a single command, streamlining the workflow.
-- For example:
-  ```bash
-  python meraki_site_update.py --site-name "My Site Name" --ports ports.csv --vlans vlans.csv
-  ```
-  This will update the VLANs based on the `vlans.csv` file and configure the ports using the `ports.csv` file.
-
-- Make sure both the VLAN and port configuration files are prepared according to the instructions mentioned above for best results.
 ---
 
 ## Logs and Output
@@ -300,9 +194,8 @@ This will generate a `vlan_report.json` file in the `output` directory.
 
 ## Notes
 
-1. **Testing Mode:** Use the `--test` flag for a dry run without applying any changes.
-2. Ensure that your Meraki API key has the appropriate permissions for the operations (read/write).
-3. Do not hard-code sensitive information (such as API keys) in scripts; always use the `.env` file.
+1. Ensure that your Meraki API key has the appropriate permissions for the operations (read/write).
+2. Do not hard-code sensitive information (such as API keys) in scripts; always use the `.env` file.
 
 ---
 
