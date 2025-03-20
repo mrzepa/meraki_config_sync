@@ -9,3 +9,8 @@ os.makedirs(INPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(BACKUP_DIR, exist_ok=True)
+
+# Filenames for local settings
+MX_PORTS = 'mx_ports.csv'
+SUBNETS = 'subnets.csv'
+VLANS = 'vlans.json'

@@ -237,37 +237,44 @@ def meraki_vlans(site_data: dict, network_name: str, network_id: str, add_missin
         return
 
     # Prepare missing VLANs and update VLANs
-    missing_vlans = {}
-    vlans_to_update = {}
+    missing_vlans = {}  # VLANs not found in Meraki, to be added.
+    vlans_to_update = {}  # VLANs existing but with a different prefix.
+    vlans_name_update = {}  # VLANs with the same prefix but different names.
 
     for site_name, vlan_data in site_data.items():
         if site_name == network_name:
-            # Filter VLANs with a defined "Prefix" (non-empty "Subnet")
             vlans_with_prefix = {
                 vlan_name: details for vlan_name, details in vlan_data.items() if details.get("Prefix")
             }
 
-            # Retrieve existing Meraki VLANs
+            # Retrieve existing Meraki VLANs by VLAN ID
             existing_meraki_vlans = dashboard.appliance.getNetworkApplianceVlans(network_id)
-            existing_vlan_names = {vlan["name"]: vlan for vlan in
-                                   existing_meraki_vlans}  # Map name to full VLAN details for update
+            existing_vlans_by_id = {existing["id"]: existing for existing in existing_meraki_vlans}
 
-            # Compare input VLANs with existing Meraki VLANs
             for vlan_name, details in vlans_with_prefix.items():
                 try:
                     ipaddress.ip_interface(details["Prefix"])  # Validate IP prefix
                 except ValueError as e:
-                    raise ValueError(
-                        f'{details["Prefix"]} is not a valid IP address prefix for site {network_name}.')
+                    logger.warning(f"Skipping {details['Prefix']}, it is not a valid IP prefix for site {network_name}. {e}")
+                    continue
 
-                if vlan_name not in existing_vlan_names:
-                    # Missing VLAN - Prepare to add
+                vlan_id = details["id"]
+                if vlan_id not in existing_vlans_by_id:
+                    # Missing VLAN (new VLAN ID) - Prepare to add
                     if add_missing:
                         missing_vlans[vlan_name] = details
                 else:
-                    # Existing VLAN - Prepare to update
-                    if update_existing:
-                        vlans_to_update[vlan_name] = details
+                    existing_details = existing_vlans_by_id[vlan_id]
+                    existing_prefix = existing_details.get("subnet")
+                    existing_name = existing_details.get("name")
+
+                    if details["Prefix"] != existing_prefix:
+                        # Prefix is different - Prepare to update (subnet and possibly other settings)
+                        if update_existing:
+                            vlans_to_update[vlan_name] = details
+                    elif vlan_name != existing_name:
+                        # Name update only (prefix/subnet is the same)
+                        vlans_name_update[vlan_name] = details
 
             break  # Process only the specific network_name
 
@@ -298,6 +305,32 @@ def meraki_vlans(site_data: dict, network_name: str, network_id: str, add_missin
 
             if vlan_details["DHCP Server"]:
                 add_dhcp_server(network_id, vlan_name, vlan_details["ID"], network_name)
+
+    if add_missing and vlans_name_update:
+        logger.info(f"Updating VLAN names in {network_name}: {vlans_name_update}")
+        for vlan_name, vlan_details in vlans_name_update:
+            # Backup before making changes
+            try:
+                vlan_to_backup = dashboard.appliance.getNetworkApplianceVlan(meraki_network_id,
+                                                                             vlanId=vlan_details["ID"])
+                backup(config.BACKUP_DIR, network_name, f'vlan_{vlan_details["ID"]}', vlan_to_backup)
+            except Exception as e:
+                logger.error(f"Failed to backup VLAN {vlan_name} in network {network_name}: {e}")
+                continue
+
+            meraki_api_payload = {
+                "id": vlan_details["ID"],
+                "name": vlan_name,
+            }
+            try:
+                # Update the VLAN in Meraki
+                dashboard.appliance.updateNetworkApplianceVlan(networkId=network_id, vlanId=vlan_details["ID"],
+                                                               **meraki_api_payload)
+                # Log success
+                logger.info(f"Successfully updated VLAN {vlan_name} in network {network_name}: {meraki_api_payload}")
+            except Exception as e:
+                # Log failure
+                logger.error(f"Failed to update VLAN {vlan_name} in network {network_name}: {e}")
 
     # Handle Existing VLANs (Update them)
     if update_existing and vlans_to_update:
@@ -414,8 +447,6 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description=f"Meraki Site Sync")
 
-    site_name_group = parser.add_mutually_exclusive_group(required=True)
-
     # Add the verbose flag
     parser.add_argument(
         "-v", "--verbose",
@@ -425,8 +456,8 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--vlans",
-        type=str,
-        help=f"Add/Update VLANs at Meraki Site. Filename containing the vlans and prefixes in csv format located in {config.INPUT_DIR}. Must be used with -a or -u."
+        action="store_true",
+        help=f"Add/Update VLANs at Meraki Site, must be used with -a or -u."
     )
     parser.add_argument(
         "-a",
@@ -445,8 +476,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--ports",
-        type=str,
-        help="Update Ports at Meraki Site. Filename containing the ports and security role in csv format."
+        action="store_true",
+        help="Update Ports at Meraki Site."
     )
 
     parser.add_argument(
@@ -487,7 +518,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     # Get the list of standard vlans
-    standard_vlans_filename = 'vlans.json'
+    standard_vlans_filename = config.VLANS
     standard_vlans_path = os.path.join(config.INPUT_DIR, standard_vlans_filename)
     with open(standard_vlans_path, 'r') as f:
         standard_vlans = json.load(f)
@@ -503,18 +534,14 @@ if __name__ == "__main__":
         meraki_network_names = [line.strip() for line in f if line.strip()]
 
     if args.vlans:
-        if not args.vlans:
-            logger.error('Missing vlans file. Please use --vlans filename.csv')
-            raise SystemExit(1)
-
+        # We have the -a or -u flag to indicate if we are adding net new vlans or updating existing ones.
         if not args.a and not args.u:
             logger.error('Missing -a or -u flag.')
             raise SystemExit(1)
 
         if args.multi_site:
             # Multi-site updates can't deal with dhcp settings. This will just add the prefixes
-            filename = args.vlans
-            site_prefixes_path = os.path.join(config.INPUT_DIR, filename)
+            site_prefixes_path = os.path.join(config.INPUT_DIR, config.SUBNETS)
             with open(site_prefixes_path, 'r') as f:
                 csv_reader = csv.DictReader(f)
                 # Use the first column (site_name) as the key, excluding it from the sub-dictionary
@@ -523,20 +550,21 @@ if __name__ == "__main__":
                     for row in csv_reader
                 }
         else:
-            filename = 'subnets.csv'
-            file_path = os.path.join(config.INPUT_DIR, 'sites', meraki_network_names[0], filename)
+            file_path = os.path.join(config.INPUT_DIR, 'sites', meraki_network_names[0], config.SUBNETS)
 
             with open(file_path, 'r') as f:
                 csv_reader = csv.DictReader(f)
                 try:
                     row = next(csv_reader)  # Get only the first row of data
                 except StopIteration:
-                    raise ValueError("CSV file is empty or has no data rows after header.")
+                    logger.error("CSV file is empty or has no data rows after header.")
+                    raise SystemExit(1)
 
                 # Build dictionary using headers as keys and the single row as values
                 site_dict = {meraki_network_names[0]: {key: value for key, value in row.items()}}
 
         site_data = build_combined_data(site_dict, standard_vlans)
+
         for meraki_network_name in meraki_network_names:
             meraki_network_id = get_meraki_network_id(meraki_network_name, meraki_networks)
             meraki_vlans(site_data, meraki_network_name, meraki_network_id, args.a, args.u)
@@ -545,9 +573,9 @@ if __name__ == "__main__":
         vlan_missing_report(meraki_networks, standard_vlans)
 
     if args.ports:
+        # Ports are fixed per device, so there is never an "add" action, it will always be an "update" action.
         if args.multi_site:
-            filename = args.ports
-            site_path = os.path.join(config.INPUT_DIR, filename)
+            site_path = os.path.join(config.INPUT_DIR, config.MX_PORTS)
 
             data_list = []  # This will store the rows as dictionaries
             with open(site_path, 'r') as f:
@@ -557,8 +585,7 @@ if __name__ == "__main__":
                     # `row` is already a dictionary with keys as the CSV headers
                     data_list.append(row)
         else:
-            filename = args.ports
-            file_path = os.path.join(config.INPUT_DIR, 'sites', meraki_network_names[0], filename)
+            file_path = os.path.join(config.INPUT_DIR, 'sites', meraki_network_names[0], config.MX_PORTS)
             data_list = []  # This will store the rows as dictionaries
             with open(file_path, 'r') as f:
                 csv_reader = csv.DictReader(f)
