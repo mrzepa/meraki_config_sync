@@ -151,13 +151,13 @@ You can run the tool via command-line options. Examples of common use cases are:
 ### Add Missing VLANs
 To add missing VLANs to the specified site:
 ```bash
-python meraki_site_update.py  --vlans vlans.csv -a
+python meraki_site_update.py  --vlans subnets.csv -a
 ```
 
 ### Update Existing VLANs
 To update existing VLANs based on the provided VLAN file:
 ```bash
-python meraki_site_update.py  --vlans vlans.csv -u
+python meraki_site_update.py  --vlans subnets.csv -u
 ```
 
 ### Update Switch Ports
@@ -169,12 +169,12 @@ python meraki_site_update.py --ports mx_ports.csv
 ### Add and Update VLANs for Multiple Sites
 You can use a file containing a list of site names to apply changes to multiple networks:
 ```bash
-python meraki_site_update.py --site-names-file sites.txt --vlans vlans.csv -aum
+python meraki_site_update.py --site-names-file sites.txt --vlans subnets.csv -aum
 ````
 
 ### Add and Update VLANs, and ports at the same time.
 ```bash
-python meraki_site_update.py  --vlans vlans.csv -au --ports mx_ports.csv
+python meraki_site_update.py  --vlans subnets.csv -au --ports mx_ports.csv
 ```
 ### Generate VLAN Report
 To generate a report showing missing or mismatched VLANs for all networks:
