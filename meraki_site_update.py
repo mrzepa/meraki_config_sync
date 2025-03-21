@@ -258,7 +258,7 @@ def meraki_vlans(site_data: dict, network_name: str, network_id: str, add_missin
                     logger.warning(f"Skipping {details['Prefix']}, it is not a valid IP prefix for site {network_name}. {e}")
                     continue
 
-                vlan_id = details["id"]
+                vlan_id = details["ID"]
                 if vlan_id not in existing_vlans_by_id:
                     # Missing VLAN (new VLAN ID) - Prepare to add
                     if add_missing:
@@ -268,10 +268,15 @@ def meraki_vlans(site_data: dict, network_name: str, network_id: str, add_missin
                     existing_prefix = existing_details.get("subnet")
                     existing_name = existing_details.get("name")
 
-                    if details["Prefix"] != existing_prefix:
+                    new_prefix = ipaddress.ip_interface(details["Prefix"])
+                    existing_prefix = ipaddress.ip_interface(existing_prefix)
+
+                    if new_prefix.network != existing_prefix.network:
                         # Prefix is different - Prepare to update (subnet and possibly other settings)
                         if update_existing:
                             vlans_to_update[vlan_name] = details
+                        else:
+                            logger.warning(f'For vlan {vlan_name}, the prefix {new_prefix} differs from existing prefix {existing_details.get("subnet")}. Please use -u to update existing subnets.')
                     elif vlan_name != existing_name:
                         # Name update only (prefix/subnet is the same)
                         vlans_name_update[vlan_name] = details
@@ -308,7 +313,7 @@ def meraki_vlans(site_data: dict, network_name: str, network_id: str, add_missin
 
     if add_missing and vlans_name_update:
         logger.info(f"Updating VLAN names in {network_name}: {vlans_name_update}")
-        for vlan_name, vlan_details in vlans_name_update:
+        for vlan_name, vlan_details in vlans_name_update.items():
             # Backup before making changes
             try:
                 vlan_to_backup = dashboard.appliance.getNetworkApplianceVlan(meraki_network_id,
