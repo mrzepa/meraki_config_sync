@@ -523,7 +523,12 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     # Get the list of standard vlans
-    standard_vlans_filename = config.VLANS
+    try:
+        standard_vlans_filename = config.VLANS
+    except AttributeError:
+        logger.error(f'Missing VLANS definition in config.py. Please update and try again.')
+        raise SystemExit(1)
+
     standard_vlans_path = os.path.join(config.INPUT_DIR, standard_vlans_filename)
     with open(standard_vlans_path, 'r') as f:
         standard_vlans = json.load(f)
@@ -546,7 +551,12 @@ if __name__ == "__main__":
 
         if args.multi_site:
             # Multi-site updates can't deal with dhcp settings. This will just add the prefixes
-            site_prefixes_path = os.path.join(config.INPUT_DIR, config.SUBNETS)
+            try:
+                subnets = config.SUBNETS
+            except AttributeError:
+                logger.error(f'Missing SUBNETS definition in config.py. Please update and try again.')
+                raise SystemExit(1)
+            site_prefixes_path = os.path.join(config.INPUT_DIR, subnets)
             with open(site_prefixes_path, 'r') as f:
                 csv_reader = csv.DictReader(f)
                 # Use the first column (site_name) as the key, excluding it from the sub-dictionary
@@ -555,7 +565,7 @@ if __name__ == "__main__":
                     for row in csv_reader
                 }
         else:
-            file_path = os.path.join(config.INPUT_DIR, 'sites', meraki_network_names[0], config.SUBNETS)
+            file_path = os.path.join(config.INPUT_DIR, 'sites', meraki_network_names[0], subnets)
 
             with open(file_path, 'r') as f:
                 csv_reader = csv.DictReader(f)
@@ -579,8 +589,14 @@ if __name__ == "__main__":
 
     if args.ports:
         # Ports are fixed per device, so there is never an "add" action, it will always be an "update" action.
+        try:
+            mx_ports = config.MX_PORTS
+        except AttributeError:
+            logger.error(f'Missing MX_PORTS definition in config.py. Please update and try again.')
+            raise SystemExit(1)
+
         if args.multi_site:
-            site_path = os.path.join(config.INPUT_DIR, config.MX_PORTS)
+            site_path = os.path.join(config.INPUT_DIR, mx_ports)
 
             data_list = []  # This will store the rows as dictionaries
             with open(site_path, 'r') as f:
@@ -590,7 +606,7 @@ if __name__ == "__main__":
                     # `row` is already a dictionary with keys as the CSV headers
                     data_list.append(row)
         else:
-            file_path = os.path.join(config.INPUT_DIR, 'sites', meraki_network_names[0], config.MX_PORTS)
+            file_path = os.path.join(config.INPUT_DIR, 'sites', meraki_network_names[0], mx_ports)
             data_list = []  # This will store the rows as dictionaries
             with open(file_path, 'r') as f:
                 csv_reader = csv.DictReader(f)
