@@ -215,15 +215,19 @@ def meraki_vlans(site_data: dict, network_name: str, network_id: str, add_missin
         vlan_interface_network = ipaddress.ip_interface(vlan_details['Prefix']).network
 
         updated_subnets = []
-        for subnet in existing_meraki_vpn["subnets"]:
+        try:
+            for subnet in existing_meraki_vpn["subnets"]:
 
-            subnet_copy = subnet.copy()  # Create a copy to avoid modifying original data
-            existing_subnet_network = ipaddress.ip_network(subnet_copy["localSubnet"])
+                subnet_copy = subnet.copy()  # Create a copy to avoid modifying original data
+                existing_subnet_network = ipaddress.ip_network(subnet_copy["localSubnet"])
 
-            # Compare using ipaddress module to ensure proper matching
-            if vlan_interface_network == existing_subnet_network:
-                subnet_copy["useVpn"] = vlan_details["VPN Mode"]
-            updated_subnets.append(subnet_copy)
+                # Compare using ipaddress module to ensure proper matching
+                if vlan_interface_network == existing_subnet_network:
+                    subnet_copy["useVpn"] = vlan_details["VPN Mode"]
+                updated_subnets.append(subnet_copy)
+        except KeyError as e:
+            logger.error(f'Key Error: {e}')
+            logger.error(f'Existing VPN configuration: {existing_meraki_vpn}')
 
         vpn_mode_payload = {'mode': existing_meraki_vpn['mode'],
                             'hubs': existing_meraki_vpn.get('hubs', []),
