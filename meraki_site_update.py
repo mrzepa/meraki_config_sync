@@ -298,9 +298,13 @@ def meraki_vlans(site_data: dict, network_name: str, network_id: str, add_missin
 
             try:
                 # Create the VLAN in Meraki
-                dashboard.appliance.createNetworkApplianceVlan(networkId=network_id, **meraki_api_payload)
-                # Log success
-                logger.info(f"Successfully added VLAN {vlan_name} to network {network_name}: {meraki_api_payload}")
+                response = dashboard.appliance.createNetworkApplianceVlan(networkId=network_id, **meraki_api_payload)
+                if response.get('id'):
+                    # Log success
+                    logger.info(f"Successfully added VLAN {vlan_name} to network {network_name}: {meraki_api_payload}, {response}")
+                else:
+                    logger.error(f"Failed to add VLAN {vlan_name} to network {network_name}: {response}")
+                    continue
             except Exception as e:
                 # Log failure
                 logger.error(f"Failed to add VLAN {vlan_name} to network {network_name}: {e}")
