@@ -565,6 +565,11 @@ if __name__ == "__main__":
                     for row in csv_reader
                 }
         else:
+            try:
+                subnets = config.SUBNETS
+            except AttributeError:
+                logger.error(f'Missing SUBNETS definition in config.py. Please update and try again.')
+                raise SystemExit(1)
             file_path = os.path.join(config.INPUT_DIR, 'sites', meraki_network_names[0], subnets)
 
             with open(file_path, 'r') as f:
