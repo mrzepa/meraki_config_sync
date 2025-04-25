@@ -211,6 +211,10 @@ def meraki_vlans(site_data: dict, network_name: str, network_id: str, add_missin
         :return: None. The function operates with side effects by modifying the Meraki VPN configuration.
         """
         existing_meraki_vpn = dashboard.appliance.getNetworkApplianceVpnSiteToSiteVpn(network_id)
+        if existing_meraki_vpn.get('mode') == 'none':
+            logger.warning(f'VPN not enabled for network {network_name}. Skipping.')
+            return
+
         backup(config.BACKUP_DIR, network_name, f'vpn', existing_meraki_vpn)
         vlan_interface_network = ipaddress.ip_interface(vlan_details['Prefix']).network
 
@@ -228,6 +232,7 @@ def meraki_vlans(site_data: dict, network_name: str, network_id: str, add_missin
         except KeyError as e:
             logger.error(f'Key Error: {e}')
             logger.error(f'Existing VPN configuration: {existing_meraki_vpn}')
+            raise
 
         vpn_mode_payload = {'mode': existing_meraki_vpn['mode'],
                             'hubs': existing_meraki_vpn.get('hubs', []),
@@ -312,6 +317,7 @@ def meraki_vlans(site_data: dict, network_name: str, network_id: str, add_missin
             except Exception as e:
                 # Log failure
                 logger.error(f"Failed to add VLAN {vlan_name} to network {network_name}: {e}")
+                continue
 
             if vlan_details["VPN Mode"]:
                 enable_vpn_mode(vlan_details, network_id)
